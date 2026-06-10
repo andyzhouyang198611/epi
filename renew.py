@@ -1,5 +1,6 @@
 import os
 import time
+import os.path
 from playwright.sync_api import sync_playwright
 
 def renew():
@@ -18,19 +19,26 @@ def renew():
             password = os.environ.get('PANEL_PASS', '')
             
             print("步骤 2：正在填写账号和密码...")
-            # 智能匹配：寻找包含用户名文本的区域或标准输入框，无视大小写，100%精准定位
-            page.locator("input[type='text'], input[name='username']").first.fill(user)
-            page.locator("input[type='password'], input[name='password']").first.fill(password)
+            # 模拟人类先点击输入框，再逐字敲击键盘，确保网页框架能100%感知到输入
+            page.locator("input[type='text']").first.click()
+            page.keyboard.type(user, delay=100)
             
-            print("步骤 3：正在点击紫色的登录按钮 (LOGOWANIE)...")
-            # 寻找带有 LOGOWANIE 文本的按钮并点击
-            page.locator("button:has-text('LOGOWANIE'), button[type='submit']").first.click()
+            page.locator("input[type='password']").first.click()
+            page.keyboard.type(password, delay=100)
             
-            print("步骤 4：登录完成，等待页面跳转中...")
-            time.sleep(10) # 留出 10 秒给系统写入登录状态
-            print(f"当前跳转后的网址为: {page.url}")
+            print("步骤 3：正在发送登录请求（模拟按下键盘回车键）...")
+            page.keyboard.press("Enter")
             
-            # 直接强行切入你的服务器控制台
+            print("步骤 4：等待登录跳转并检查结果...")
+            time.sleep(6) 
+            print(f"当前完成登录尝试后的网址为: {page.url}")
+            
+            # 💡 核心诊断：如果还在登录页，说明账号密码不对或被拦截，在此处立刻截取第一现场！
+            if "login" in page.url:
+                page.screenshot(path="error.png")
+                raise Exception("【登录失败】未能成功跳转！依旧停留在登录页面。请去 GitHub Actions 底部下载最新的 error.png，看看网页上冒出了什么红字提示。")
+            
+            # 只有成功通过登录，才会来到这一步
             server_url = "https://panel.epichost.pl/server/b3a91d2a"
             print(f"步骤 5：正在直接进入服务器控制台: {server_url}")
             page.goto(server_url, wait_until="networkidle")
@@ -49,8 +57,9 @@ def renew():
         except Exception as e:
             print("❌ 运行过程中出现错误:")
             print(e)
-            # 保留错误截图功能
-            page.screenshot(path="error.png")
+            # 如果是步骤5、6报错，且前面没生成过截图，则在这里补抓一张
+            if not os.path.exists("error.png"):
+                page.screenshot(path="error.png")
             print("错误画面已保存为 error.png")
             raise e
             
