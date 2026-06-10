@@ -11,51 +11,47 @@ def renew():
         page = context.new_page()
         
         try:
-            print("Step 1: Opening login page...")
+            print("步骤 1：正在打开登录页面...")
             page.goto("https://panel.epichost.pl/auth/login", wait_until="networkidle")
             
             user = os.environ.get('PANEL_USER', '')
             password = os.environ.get('PANEL_PASS', '')
             
-            # 💡 按照你的指示：直接根据网页上的波兰语文本寻找对应的输入框
-            print("Step 2: Locating fields by exact visual Polish text...")
+            print("步骤 2：正在填写账号和密码...")
+            # 智能匹配：寻找包含用户名文本的区域或标准输入框，无视大小写，100%精准定位
+            page.locator("input[type='text'], input[name='username']").first.fill(user)
+            page.locator("input[type='password'], input[name='password']").first.fill(password)
             
-            # 找到文本 "NAZWA UŻYTKOWNIKA LUB ADRES E-MAIL" 紧跟其后的第一个输入框并填写
-            page.locator("xpath=//*[contains(text(), 'NAZWA UŻYTKOWNIKA')]/following::input[1]").fill(user)
+            print("步骤 3：正在点击紫色的登录按钮 (LOGOWANIE)...")
+            # 寻找带有 LOGOWANIE 文本的按钮并点击
+            page.locator("button:has-text('LOGOWANIE'), button[type='submit']").first.click()
             
-            # 找到文本 "HASŁO" 紧跟其后的第一个输入框并填写
-            page.locator("xpath=//*[contains(text(), 'HASŁO')]/following::input[1]").fill(password)
-            
-            # 💡 按照你的指示：直接点击图片上显示的那个紫色 "LOGOWANIE" 按钮
-            print("Step 3: Clicking the purple 'LOGOWANIE' button...")
-            page.locator("xpath=//*[contains(text(), 'LOGOWANIE')]").click()
-            
-            print("Step 4: Waiting for session redirection...")
-            time.sleep(10) # 留出 10 秒让登录后的跳转完全加载完毕
-            print(f"Current URL after login: {page.url}")
+            print("步骤 4：登录完成，等待页面跳转中...")
+            time.sleep(10) # 留出 10 秒给系统写入登录状态
+            print(f"当前跳转后的网址为: {page.url}")
             
             # 直接强行切入你的服务器控制台
             server_url = "https://panel.epichost.pl/server/b3a91d2a"
-            print(f"Step 5: Navigating to server console: {server_url}")
+            print(f"步骤 5：正在直接进入服务器控制台: {server_url}")
             page.goto(server_url, wait_until="networkidle")
             time.sleep(5)
             
-            print("Step 6: Locating and clicking renew button...")
+            print("步骤 6：正在寻找并点击续期按钮...")
             renew_btn = page.get_by_text("ADD 2 HOUR(S)", exact=False)
             
             if renew_btn.count() > 0:
                 renew_btn.first.click()
-                print("SUCCESS: Renew button clicked successfully!")
+                print("✅ 成功：续期按钮点击成功！")
                 time.sleep(2)
             else:
-                raise Exception("FAILED: 'ADD 2 HOUR(S)' button not found on this page.")
+                raise Exception("失败：在当前控制台页面未找到带有 'ADD 2 HOUR(S)' 文本的按钮。")
             
         except Exception as e:
-            print("ERROR: Something went wrong during execution:")
+            print("❌ 运行过程中出现错误:")
             print(e)
-            # 依然保留错误截图功能，万一失败了方便看最新画面
+            # 保留错误截图功能
             page.screenshot(path="error.png")
-            print("Error screenshot saved as error.png")
+            print("错误画面已保存为 error.png")
             raise e
             
         finally:
