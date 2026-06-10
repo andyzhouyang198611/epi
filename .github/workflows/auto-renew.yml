@@ -1,0 +1,42 @@
+name: EpicHost Auto Renew
+
+on:
+  schedule:
+    # 每天每小时自动运行一次。
+    # 提示：GitHub Actions 的定时任务（Cron）有时会延迟 5-10 分钟运行，
+    # 但因为你的服务器是 2 小时过期，每小时运行一次完全可以容错。
+    - cron: '0 * * * *'
+  workflow_dispatch: # 允许你在 GitHub 网页上点击按钮手动运行，方便调试
+
+jobs:
+  renew-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. 检查仓库代码
+        uses: actions/checkout@v3
+
+      - name: 2. 初始化 Python 环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 3. 安装 Playwright 与浏览器核心
+        run: |
+          pip install playwright
+          playwright install chromium
+
+      - name: 4. 执行续期脚本
+        env:
+          # 从 GitHub 仓库的安全凭证（Secrets）中读取账号密码
+          PANEL_USER: ${{ secrets.PANEL_USER }}
+          PANEL_PASS: ${{ secrets.PANEL_PASS }}
+        run: python renew.py
+
+      - name: 5. 错误截图归档（仅在失败时触发）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshot
+          path: error.png
+          retention-days: 3 # 截图保留 3 天，方便你查看为什么报错
