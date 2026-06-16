@@ -25,37 +25,43 @@ jobs:
 
       - name: 4. 下载并启动 Hysteria 2 客户端
         env:
-          HY2_SERVER: ${{ secrets.HY2_SERVER }} # 你的Hy2服务器IP:端口
-          HY2_AUTH: ${{ secrets.HY2_AUTH }}     # 你的Hy2密码/认证文本
+          HY2_SERVER: ${{ secrets.HY2_SERVER }} # us.apifrrgrtdd.lol:22724
+          HY2_AUTH: ${{ secrets.HY2_AUTH }}     # 你的密码
         run: |
           echo "正在下载 Hysteria 2 官方 Linux 客户端..."
           wget -O hysteria https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
           chmod +x hysteria
 
-          echo "正在生成 Hy2 配置文件..."
+          echo "正在生成修正后的 Hy2 配置文件..."
+          # 💡 移除了错误的 sni 配置，让其自动识别代理域名
           cat <<EOF > hy2_config.yaml
           server: $HY2_SERVER
           auth: $HY2_AUTH
           socks5:
             listen: 127.0.0.1:1080
           tls:
-            sni: panel.epichost.pl
-            insecure: true # 允许自签证书，提高节点连接成功率
+            insecure: true
           EOF
 
           echo "正在后台启动 Hy2 代理隧道..."
           ./hysteria client -c hy2_config.yaml > hysteria.log 2>&1 &
           
-          # 等待 3 秒确保隧道建立成功
-          sleep 3
-          echo "--- Hysteria 启动日志简要查看 ---"
-          head -n 20 hysteria.log
+          # 等待 5 秒让隧道彻底建立
+          sleep 5
+          
+          echo "=== 检查 Hysteria 2 客户端启动日志 ==="
+          cat hysteria.log
+          echo "======================================"
+
+      - name: 4.5 测试代理网络是否畅通
+        run: |
+          echo "正在通过本地 Socks5 代理尝试访问网络..."
+          curl -I --socks5-hostname 127.0.0.1:1080 https://www.google.com --max-time 10 || echo "⚠️ 警告：代理测试未通过，请检查上方日志是否包含密码错误或连接超时。"
 
       - name: 5. 执行续期脚本（通过本地 Hy2 转发）
         env:
           PANEL_USER: ${{ secrets.PANEL_USER }}
           PANEL_PASS: ${{ secrets.PANEL_PASS }}
-          # 💡 告诉 Python 脚本，直接走刚刚建立好的本地 Socks5 隧道
           PROXY_SERVER: socks5://127.0.0.1:1080
         run: python renew.py
 
