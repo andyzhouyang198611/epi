@@ -23,49 +23,93 @@ jobs:
           pip install playwright
           playwright install chromium
 
-      - name: 4. 下载并启动 Hysteria 2 客户端
+      - name: 4. 自动解析 HY2 节点链接并生成配置
         env:
-          HY2_SERVER: ${{ secrets.HY2_SERVER }} # us.apifrrgrtdd.lol:22724
-          HY2_AUTH: ${{ secrets.HY2_AUTH }}     # 你的密码
+          HY2_URI: ${{ secrets.HY2_URI }} # 你的完整 hysteria2:// 链接
+        run: |
+          cat << 'EOF' > parse_hy2.py
+          import os
+          from urllib.parse import urlparse, parse_qs, unquote
+          
+          uri = os.environ.get('HY2_URI', '').strip()
+          if not uri:
+              print('❌ 错误：未能从 Secrets 中读取到 HY2_URI')
+              exit(1)
+              
+          # 标准化协议头以便 urlparse 正确解析
+          url_str = uri.replace('hysteria2://', 'http://', 1).replace('hy2://', 'http://', 1)
+          if not url_str.startswith('http://'):
+              url_str = 'http://' + url_str
+              
+          parsed = urlparse(url_str)
+          auth = parsed.username or ''
+          if not auth and '@' in parsed.netloc:
+              auth = parsed.netloc.split('@')[0]
+              
+          server = parsed.netloc.split('@')[-1]
+          queries = parse_qs(parsed.query)
+          obfs_type = queries.get('obfs', [''])[0]
+          obfs_password = unquote(queries.get('obfs-password', [''])[0])
+          sni = queries.get('sni', [''])[0]
+          
+          config = [
+              f'server: "{server}"',
+              f'auth: "{auth}"',
+              'socks5:',
+              '  listen: "127.0.0.1:1080"'
+          ]
+          
+          # 💡 核心修复：自动塞入你的沙曼蛇混淆配置
+          if obfs_type:
+              config.extend([
+                  'obfs:',
+                  f'  type: "{obfs_type}"',
+                  f'  {obfs_type}:',
+                  f'    password: "{obfs_password}"'
+              ])
+              
+          config.append('tls:')
+          if sni:
+              config.append(f'  sni: "{sni}"')
+          config.append('  insecure: true')
+          
+          with open('hy2_config.yaml', 'w', encoding='utf-8') as f:
+              f.write('\n'.join(config))
+          print('✅ 自动诊断：完美匹配混淆参数，已生成新的 hy2_config.yaml 文件！')
+          EOF
+          python parse_hy2.py
+
+      - name: 5. 下载并启动 Hysteria 2 客户端
         run: |
           echo "正在下载 Hysteria 2 官方 Linux 客户端..."
           wget -O hysteria https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
           chmod +x hysteria
 
-          echo "正在生成修正后的 Hy2 配置文件..."
-          # 💡 移除了错误的 sni 配置，让其自动识别代理域名
-          cat <<EOF > hy2_config.yaml
-          server: $HY2_SERVER
-          auth: $HY2_AUTH
-          socks5:
-            listen: 127.0.0.1:1080
-          tls:
-            insecure: true
-          EOF
-
           echo "正在后台启动 Hy2 代理隧道..."
-          ./hysteria client -c hy2_config.yaml > hysteria.log 2>&1 &
-          
-          # 等待 5 秒让隧道彻底建立
-          sleep 5
-          
-          echo "=== 检查 Hysteria 2 客户端启动日志 ==="
-          cat hysteria.log
-          echo "======================================"
+          ./hysteria -c hy2_config.yaml > hysteria.log 2>&1 &
+          sleep 6
 
-      - name: 4.5 测试代理网络是否畅通
+      - name: 5.5 测试代理网络并诊断
         run: |
           echo "正在通过本地 Socks5 代理尝试访问网络..."
-          curl -I --socks5-hostname 127.0.0.1:1080 https://www.google.com --max-time 10 || echo "⚠️ 警告：代理测试未通过，请检查上方日志是否包含密码错误或连接超时。"
+          if curl -I --socks5-hostname 127.0.0.1:1080 https://www.google.com --max-time 10; then
+            echo "✅ 恭喜！Hy2 代理完全畅通！"
+          else
+            echo "❌ 错误：本地代理 1080 端口未响应。正在为你读取 Hysteria 2 的崩溃原因..."
+            echo "=================== HY2 报错日志 ==================="
+            cat hysteria.log
+            echo "===================================================="
+            exit 1
+          fi
 
-      - name: 5. 执行续期脚本（通过本地 Hy2 转发）
+      - name: 6. 执行续期脚本（通过本地 Hy2 转发）
         env:
           PANEL_USER: ${{ secrets.PANEL_USER }}
           PANEL_PASS: ${{ secrets.PANEL_PASS }}
           PROXY_SERVER: socks5://127.0.0.1:1080
         run: python renew.py
 
-      - name: 6. 错误截图归档（仅在失败时触发）
+      - name: 7. 错误截图归档（仅在失败时触发）
         if: failure()
         uses: actions/upload-artifact@v4
         with:
